@@ -1,0 +1,46 @@
+{
+  "location": {
+    "name": "Kraków",
+    "latitude": 50.0614,
+    "longitude": 19.9366,
+    "timezone": "Europe/Warsaw"
+  },
+  "season": {
+    "enabled": true,
+    "start": "09-15",
+    "end": "04-30"
+  },
+  "check": {
+    "localHour": 19,
+    "localMinute": 30,
+    "knobDeadline": "22:00"
+  },
+  "thresholds": {
+    "toIII_min48": -12,
+    "IIItoII_min48": -3,
+    "toII_avg72": 1,
+    "IItoI_avg72": 7,
+    "ItoZero_avg72": 16,
+    "ItoZero_days": 3,
+    "zeroToI_avg72": 10,
+    "confirmDaysUp": 1,
+    "confirmDaysDown": 4,
+    "minDaysBetweenChanges": 0,
+    "avgWindowHours": 72,
+    "minWindowHours": 48
+  },
+  "heaters": {
+    "count": 3,
+    "kitchenOneStepLower": true,
+    "kwhPerDay": {
+      "0": 0,
+      "I": 10,
+      "II": 20,
+      "III": 30
+    }
+  },
+  "cost": {
+    "pricePerKwhNight": 0.64,
+    "currency": "zł"
+  }
+}

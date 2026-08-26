@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Settings — NightCharge</title>
+<style>
+:root { color-scheme: dark; --bg:#111214; --card:#1b1d21; --fg:#e8e6e1; --dim:#8a8f98; --accent:#e8a33d; --line:#2a2d33; }
+* { box-sizing: border-box; margin: 0; }
+body { background: var(--bg); color: var(--fg); font: 16px/1.5 -apple-system, system-ui, sans-serif; padding: 16px; max-width: 480px; margin-inline: auto; }
+.card { background: var(--card); border-radius: 14px; padding: 16px; margin-bottom: 12px; }
+h1 { font-size: 20px; margin-bottom: 12px; }
+h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--dim); margin-bottom: 10px; }
+label { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 15px; }
+label:last-child { border-bottom: 0; }
+input { background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; width: 90px; font-size: 15px; text-align: right; }
+input[type=checkbox] { width: auto; }
+input.wide { width: 100%; text-align: left; }
+button { background: var(--accent); color: #111; border: 0; border-radius: 10px; padding: 12px; width: 100%; font-size: 16px; font-weight: 600; margin-top: 4px; }
+button:disabled { opacity: .4; }
+.note, a { color: var(--dim); font-size: 13px; }
+#status { margin-top: 10px; font-size: 14px; }
+#status.err { color: #e57373; }
+#status.ok { color: #6fbf73; }
+footer { text-align: center; margin-top: 16px; }
+</style>
+</head>
+<body>
+<h1>Settings</h1>
+
+<div class="card">
+  <h2>GitHub token</h2>
+  <input class="wide" id="token" type="password" placeholder="fine-grained PAT (contents:write)">
+  <p class="note" style="margin-top:8px">
+    The token stays on this phone only (localStorage). Without it the screen is read-only.
+    Anyone with the token can write to this repo — treat it like a password.
+    <a id="ghEdit" href="#" target="_blank" rel="noopener">Edit config.json on GitHub</a>
+  </p>
+</div>
+
+<div class="card">
+  <h2>Thresholds (°C)</h2>
+  <div id="fields"></div>
+</div>
+
+<div class="card">
+  <h2>Other</h2>
+  <label>Season enabled <input type="checkbox" id="seasonEnabled"></label>
+  <label>Check hour <input id="localHour" type="number" min="0" max="23"></label>
+  <label>Price per kWh (night) <input id="price" type="number" step="0.01"></label>
+</div>
+
+<button id="save" disabled>Save to repo</button>
+<div id="status"></div>
+
+<footer><a href="index.html">← Back</a></footer>
+
+<script>
+const FIELDS = [
+  ['toIII_min48', '→ III when 48 h min below'],
+  ['IIItoII_min48', 'III → II when 48 h min above'],
+  ['toII_avg72', '→ II when 72 h avg below'],
+  ['IItoI_avg72', 'II → I when 72 h avg above'],
+  ['ItoZero_avg72', 'I → 0 when 72 h avg above'],
+  ['ItoZero_days', 'I → 0: number of days'],
+  ['zeroToI_avg72', '0 → I when 72 h avg below'],
+  ['confirmDaysDown', 'Confirm lowering (days)'],
+];
+const $ = (id) => document.getElementById(id);
+let config, sha;
+
+// repo detected from the Pages URL: user.github.io/repo
+const [owner] = location.hostname.split('.');
+const repo = location.pathname.split('/').filter(Boolean)[0] || '';
+const api = `https://api.github.com/repos/${owner}/${repo}/contents/config.json`;
+$('ghEdit').href = `https://github.com/${owner}/${repo}/edit/main/config.json`;
+
+$('fields').innerHTML = FIELDS.map(([k, label]) =>
+  `<label>${label} <input id="f_${k}" type="number" step="0.5"></label>`).join('');
+
+async function load() {
+  const res = await fetch('config.json', { cache: 'no-cache' });
+  config = await res.json();
+  for (const [k] of FIELDS) $(`f_${k}`).value = config.thresholds[k];
+  $('seasonEnabled').checked = config.season.enabled;
+  $('localHour').value = config.check.localHour;
+  $('price').value = config.cost.pricePerKwhNight;
+  $('token').value = localStorage.getItem('gh_token') || '';
+  updateButton();
+}
+
+function updateButton() { $('save').disabled = !$('token').value.trim(); }
+$('token').addEventListener('input', () => {
+  localStorage.setItem('gh_token', $('token').value.trim());
+  updateButton();
+});
+
+$('save').addEventListener('click', async () => {
+  const token = $('token').value.trim();
+  const status = $('status');
+  status.className = ''; status.textContent = 'Saving…';
+  try {
+    for (const [k] of FIELDS) config.thresholds[k] = Number($(`f_${k}`).value);
+    config.season.enabled = $('seasonEnabled').checked;
+    config.check.localHour = Number($('localHour').value);
+    config.cost.pricePerKwhNight = Number($('price').value);
+
+    const headers = { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' };
+    const cur = await fetch(api, { headers });
+    if (!cur.ok) throw new Error(`GitHub: ${cur.status} (token OK? repo public?)`);
+    const { sha } = await cur.json();
+
+    const body = JSON.stringify({
+      message: 'config: change from the PWA',
+      content: btoa(unescape(encodeURIComponent(JSON.stringify(config, null, 2) + '\n'))),
+      sha,
+    });
+    const put = await fetch(api, { method: 'PUT', headers, body });
+    if (!put.ok) throw new Error(`Save failed: ${put.status}`);
+    status.className = 'ok';
+    status.textContent = 'Saved. Changes take effect from the next check.';
+  } catch (e) {
+    status.className = 'err';
+    status.textContent = e.message;
+  }
+});
+
+load().catch(() => { $('status').className = 'err'; $('status').textContent = 'Cannot load config.json'; });
+</script>
+</body>
+</html>

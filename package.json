@@ -1,0 +1,12 @@
+{
+  "name": "nightcharge",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Tells you when to turn the charge-level knob on your storage heaters \u2014 a few times a season, not every day.",
+  "scripts": {
+    "test": "node --test 'test/**/*.test.js'",
+    "backtest": "node scripts/backtest.js",
+    "check": "node scripts/check.js"
+  }
+}

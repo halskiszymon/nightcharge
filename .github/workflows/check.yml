@@ -1,0 +1,56 @@
+name: Check forecast
+
+on:
+  schedule:
+    # 19:30 Europe/Warsaw = 17:30 UTC (summer) / 18:30 UTC (winter).
+    # Actions cron can run 10–15 minutes late, so we fire at both hours
+    # and scripts/guard.js lets only the right one through.
+    - cron: '30 17 * * *'
+    - cron: '30 18 * * *'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Test mode: notify = send a test notification, change = simulate a level change'
+        type: choice
+        options: ['', 'notify', 'change']
+        default: ''
+
+permissions:
+  contents: write
+
+concurrency:
+  group: check
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Is this the right local hour?
+        id: guard
+        if: github.event_name == 'schedule'
+        run: node scripts/guard.js >> "$GITHUB_OUTPUT"
+
+      - name: Check and notify if needed
+        if: github.event_name != 'schedule' || steps.guard.outputs.run == 'true'
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          FORCE: ${{ inputs.force }}
+        run: node scripts/check.js
+
+      - name: Commit state back to the repo
+        if: github.event_name != 'schedule' || steps.guard.outputs.run == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/state.json data/forecast.json
+          git diff --cached --quiet && exit 0
+          git commit -m "state: $(date -u +%F)"
+          git pull --rebase origin "${GITHUB_REF_NAME}"
+          git push
