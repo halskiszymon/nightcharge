@@ -4,7 +4,7 @@
 //   FORCE=change  — treat today's decision as a change (tests the full path)
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
-import { step, metrics, inSeason, fmt } from '../src/thresholds.js';
+import { step, metrics, inSeason, fmt, daysBetween } from '../src/thresholds.js';
 import { notify, changeMessage } from '../src/notify.js';
 
 const ROOT = new URL('../', import.meta.url);
@@ -110,7 +110,15 @@ const main = async () => {
 
   // FORCE bypasses the season gate so notifications can be tested in summer
   if (!inSeason(now.date, config.season) && !force) {
-    console.log('Outside the heating season — nothing to do.');
+    // GitHub disables scheduled workflows after 60 days without repo activity;
+    // an occasional summer commit keeps the cron alive until September
+    if (!state.keepalive || daysBetween(state.keepalive, now.iso) >= 45) {
+      state.keepalive = now.iso;
+      saveState(state);
+      console.log('Keepalive — state touched so the scheduled workflow stays enabled.');
+    } else {
+      console.log('Outside the heating season — nothing to do.');
+    }
     return;
   }
 
