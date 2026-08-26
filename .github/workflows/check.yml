@@ -49,7 +49,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/state.json data/forecast.json
+          git add data/
           git diff --cached --quiet && exit 0
           git commit -m "state: $(date -u +%F)"
           git pull --rebase origin "${GITHUB_REF_NAME}"

@@ -108,7 +108,8 @@ const main = async () => {
     return;
   }
 
-  if (!inSeason(now.date, config.season)) {
+  // FORCE bypasses the season gate so notifications can be tested in summer
+  if (!inSeason(now.date, config.season) && !force) {
     console.log('Outside the heating season — nothing to do.');
     return;
   }
