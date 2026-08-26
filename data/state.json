@@ -1,10 +1,15 @@
 {
   "level": "0",
-  "warmStreak": 0,
+  "warmStreak": 1,
   "lastChange": null,
   "pending": null,
   "history": [],
   "seasonStartNotified": null,
   "seasonEndNotified": null,
-  "lastCheck": null
+  "lastCheck": {
+    "date": "2026-08-26",
+    "min48": 13.6,
+    "avg72": 20.21944444444444,
+    "reason": "warm, 3-day average 20.2 °C"
+  }
 }
