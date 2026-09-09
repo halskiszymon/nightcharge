@@ -47,11 +47,11 @@ function forecastRows(fc, state, config) {
   });
 
   const th = config.thresholds;
-  // nearest threshold relevant to the current level
+  // nearest threshold relevant to the current level (day mean = coldest 24 h mean)
   const level = state.level;
   const trigger =
-    level === 'III' ? { v: th.IIItoII_min48, label: `min > ${fmt1(th.IIItoII_min48)} °C → II` } :
-    level === 'II' ? { v: th.toIII_min48, label: `min < ${fmt1(th.toIII_min48)} °C → III` } :
+    level === 'III' ? { v: th.IIItoII_mean24, label: `day avg > ${fmt1(th.IIItoII_mean24)} °C → II` } :
+    level === 'II' ? { v: th.toIII_mean24, label: `day avg < ${fmt1(th.toIII_mean24)} °C → III` } :
     level === 'I' ? { v: th.toII_avg72, label: `avg < ${fmt1(th.toII_avg72)} °C → II` } :
     { v: th.zeroToI_avg72, label: `avg < ${fmt1(th.zeroToI_avg72)} °C → I` };
 
@@ -62,7 +62,7 @@ function forecastRows(fc, state, config) {
     const min = Math.min(...temps);
     const avg = temps.reduce((a, b) => a + b) / temps.length;
     const d = new Date(`${day}T12:00:00`);
-    const hit = level === 'III' || level === 'II' ? min < th.toIII_min48 : avg < th.toII_avg72;
+    const hit = level === 'III' || level === 'II' ? avg < th.toIII_mean24 : avg < th.toII_avg72;
     html += `<div class="row"><span class="t">${DAYS[d.getDay()]} ${d.getDate()}.${String(d.getMonth() + 1).padStart(2, '0')}</span>` +
       `<span class="${hit ? 'cold' : ''}">min ${fmt1(min)} °C · avg ${fmt1(avg)} °C</span></div>`;
   }

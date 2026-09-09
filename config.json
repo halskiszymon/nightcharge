@@ -1,6 +1,6 @@
 {
   "location": {
-    "name": "Krak\u00f3w",
+    "name": "Kraków",
     "latitude": 50.0614,
     "longitude": 19.9366,
     "timezone": "Europe/Warsaw"
@@ -16,15 +16,15 @@
     "knobDeadline": "22:00"
   },
   "thresholds": {
-    "toIII_min48": -12,
-    "IIItoII_min48": -3,
-    "toII_avg72": 1,
-    "IItoI_avg72": 7,
+    "emergencyMin48": -16,
+    "toIII_mean24": -9,
+    "IIItoII_mean24": -2,
+    "toII_avg72": 3,
+    "IItoI_avg72": 9,
     "ItoZero_avg72": 16,
-    "ItoZero_days": 3,
     "zeroToI_avg72": 10,
     "confirmDaysUp": 1,
-    "confirmDaysDown": 4,
+    "confirmDaysDown": 5,
     "minDaysBetweenChanges": 0,
     "avgWindowHours": 72,
     "minWindowHours": 48
@@ -41,6 +41,6 @@
   },
   "cost": {
     "pricePerKwhNight": 0.64,
-    "currency": "z\u0142"
+    "currency": "zł"
   }
 }

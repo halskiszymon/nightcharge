@@ -57,12 +57,12 @@ footer { text-align: center; margin-top: 16px; }
 
 <script>
 const FIELDS = [
-  ['toIII_min48', '→ III when 48 h min below'],
-  ['IIItoII_min48', 'III → II when 48 h min above'],
+  ['toIII_mean24', '→ III when coldest day avg below'],
+  ['IIItoII_mean24', 'III → II when coldest day avg above'],
+  ['emergencyMin48', '→ III instantly when 48 h min below'],
   ['toII_avg72', '→ II when 72 h avg below'],
   ['IItoI_avg72', 'II → I when 72 h avg above'],
   ['ItoZero_avg72', 'I → 0 when 72 h avg above'],
-  ['ItoZero_days', 'I → 0: number of days'],
   ['zeroToI_avg72', '0 → I when 72 h avg below'],
   ['confirmDaysDown', 'Confirm lowering (days)'],
 ];

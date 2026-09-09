@@ -5,52 +5,69 @@ export const LEVELS = ['0', 'I', 'II', 'III'];
 export const toIndex = (label) => LEVELS.indexOf(String(label));
 export const toLabel = (index) => LEVELS[index];
 
+const mean = (a) => a.reduce((x, y) => x + y, 0) / a.length;
+
 /**
- * min48 / avg72 over the hourly series, starting at the first hour >= fromIso.
- * Returns nulls when there is not enough data — callers must handle that.
+ * Decision inputs from an hourly series, starting at the first hour >= fromIso:
+ *   min48      — minimum over the next 48 h (emergency trigger only)
+ *   coldMean24 — coldest rolling 24 h mean within the next 48 h (level III driver;
+ *                a storage heater responds to daily energy, not to a single cold hour)
+ *   avg72      — mean over the next 72 h (II/I/0 driver)
+ *   outlookMin — lowest complete-day mean over days 4–7, used to hold a lowering
+ *                when cold returns right behind it; Infinity when unavailable
+ * Returns complete=false when the 48/72 h windows are short — callers must handle it.
  */
 export function metrics(hourly, fromIso, th = {}) {
-  const hours48 = th.minWindowHours ?? 48;
-  const hours72 = th.avgWindowHours ?? 72;
+  const hoursMin = th.minWindowHours ?? 48;
+  const hoursAvg = th.avgWindowHours ?? 72;
   const start = hourly.time.findIndex((t) => t >= fromIso);
-  if (start < 0) return { min48: null, avg72: null, start: -1, complete: false };
+  if (start < 0) return { start: -1, complete: false, min48: null, avg72: null, coldMean24: null, outlookMin: Infinity };
 
-  const slice = (n) =>
-    hourly.temperature_2m.slice(start, start + n).filter((v) => typeof v === 'number');
+  const slice = (from, n) =>
+    hourly.temperature_2m.slice(start + from, start + from + n).filter((v) => typeof v === 'number');
 
-  const w48 = slice(hours48);
-  const w72 = slice(hours72);
-  const complete = w48.length === hours48 && w72.length === hours72;
+  const w48 = slice(0, hoursMin);
+  const w72 = slice(0, hoursAvg);
+  const complete = w48.length === hoursMin && w72.length === hoursAvg;
+
+  let coldMean24 = Infinity;
+  if (w48.length >= 24)
+    for (let s = 0; s + 24 <= w48.length; s++) coldMean24 = Math.min(coldMean24, mean(w48.slice(s, s + 24)));
+
+  let outlookMin = Infinity;
+  for (let d = 3; d < 7; d++) {
+    const w = slice(d * 24, 24);
+    if (w.length === 24) outlookMin = Math.min(outlookMin, mean(w));
+  }
 
   return {
     start,
     complete,
     min48: w48.length ? Math.min(...w48) : null,
-    avg72: w72.length ? w72.reduce((a, b) => a + b, 0) / w72.length : null,
+    avg72: w72.length ? mean(w72) : null,
+    coldMean24: Number.isFinite(coldMean24) ? coldMean24 : null,
+    outlookMin,
   };
 }
 
 /**
- * One step of the state machine. state = { level: '0'|'I'|'II'|'III', warmStreak: number }.
+ * One step of the state machine. state = { level: '0'|'I'|'II'|'III' }.
  * Transitions are always computed relative to state.level, never from scratch.
  */
 export function decide(state, m, th) {
   const cur = toIndex(state.level);
-  const warmStreak = m.avg72 > th.ItoZero_avg72 ? (state.warmStreak || 0) + 1 : 0;
-  const next = (index, reason) => ({
-    level: toLabel(index),
-    warmStreak,
-    changed: index !== cur,
-    reason,
-  });
+  const next = (index, reason) => ({ level: toLabel(index), changed: index !== cur, reason });
 
-  if (m.min48 < th.toIII_min48)
-    return next(3, `48 h minimum of ${fmt(m.min48)}, below ${fmt(th.toIII_min48)}`);
+  if (m.min48 < th.emergencyMin48)
+    return next(3, `extreme frost, 48 h minimum of ${fmt(m.min48)}`);
+
+  if (m.coldMean24 < th.toIII_mean24)
+    return next(3, `coldest day ahead averages ${fmt(m.coldMean24)}, below ${fmt(th.toIII_mean24)}`);
 
   if (cur === 3) {
-    return m.min48 > th.IIItoII_min48
-      ? next(2, `minimum climbing to ${fmt(m.min48)}, the frost is easing`)
-      : next(3, `still freezing, minimum ${fmt(m.min48)}`);
+    return m.coldMean24 > th.IIItoII_mean24
+      ? next(2, `coldest day ahead averages ${fmt(m.coldMean24)}, the frost is easing`)
+      : next(3, `still freezing, coldest day ahead averages ${fmt(m.coldMean24)}`);
   }
 
   if (m.avg72 < th.toII_avg72)
@@ -63,8 +80,8 @@ export function decide(state, m, th) {
   }
 
   if (cur === 1) {
-    return warmStreak >= th.ItoZero_days
-      ? next(0, `${warmStreak} days in a row with the average above ${fmt(th.ItoZero_avg72)}`)
+    return m.avg72 > th.ItoZero_avg72
+      ? next(0, `warm spell, 3-day average ${fmt(m.avg72)}`)
       : next(1, `3-day average ${fmt(m.avg72)}`);
   }
 
@@ -74,23 +91,32 @@ export function decide(state, m, th) {
     : next(0, `warm, 3-day average ${fmt(m.avg72)}`);
 }
 
+/** Would the band being left re-trigger within the day 4–7 outlook? */
+function coldReturns(cur, m, th) {
+  if (!Number.isFinite(m.outlookMin)) return false;
+  if (cur === 3) return m.outlookMin < th.toIII_mean24;
+  if (cur === 2) return m.outlookMin < th.toII_avg72;
+  if (cur === 1) return m.outlookMin < th.zeroToI_avg72;
+  return false;
+}
+
 /**
- * Full step: threshold decision + confirmation + dwell time.
+ * Full step: threshold decision + confirmation + outlook hold + dwell time.
  *
- * Confirmation and dwell are asymmetric. Raising the level goes through
- * immediately — cold hurts. Lowering must hold for confirmDaysDown days and
- * wait minDaysBetweenChanges since the previous change, as it only costs money.
+ * All damping is asymmetric. Raising the level goes through after
+ * confirmDaysUp evenings (default: immediately) — cold hurts. Lowering must
+ * hold for confirmDaysDown evenings, is held while days 4–7 show the cold
+ * returning, and respects minDaysBetweenChanges — it only costs money.
  *
- * state = { level, warmStreak, lastChange, pending: { level, days } | null }
+ * state = { level, lastChange, pending: { level, days } | null }
  */
 export function step(state, m, th, todayIso) {
   const out = decide(state, m, th);
   const cur = toIndex(state.level);
   const target = toIndex(out.level);
-  const base = { level: state.level, warmStreak: out.warmStreak, changed: false, held: false };
+  const base = { level: state.level, changed: false, held: false, lastChange: state.lastChange };
 
-  if (target === cur)
-    return { ...base, pending: null, lastChange: state.lastChange, reason: out.reason };
+  if (target === cur) return { ...base, pending: null, reason: out.reason };
 
   const up = target > cur;
   const need = up ? (th.confirmDaysUp ?? 1) : (th.confirmDaysDown ?? 1);
@@ -100,34 +126,17 @@ export function step(state, m, th, todayIso) {
       : { level: out.level, days: 1 };
 
   if (pending.days < need)
-    return {
-      ...base,
-      pending,
-      lastChange: state.lastChange,
-      held: true,
-      reason: `${out.reason} — condition holding for ${pending.days}/${need} days`,
-    };
+    return { ...base, pending, held: true, reason: `${out.reason} — condition holding for ${pending.days}/${need} days` };
+
+  if (!up && coldReturns(cur, m, th))
+    return { ...base, pending, held: true, reason: `${out.reason} — but cold returns within a week (day 4–7 low of ${fmt(m.outlookMin)}), holding` };
 
   const dwell = up ? 0 : th.minDaysBetweenChanges || 0;
   const since = daysBetween(state.lastChange, todayIso);
   if (dwell > 0 && since !== null && since < dwell)
-    return {
-      ...base,
-      pending,
-      lastChange: state.lastChange,
-      held: true,
-      reason: `${out.reason} — last change ${since} days ago, dwell time is ${dwell} days`,
-    };
+    return { ...base, pending, held: true, reason: `${out.reason} — last change ${since} days ago, dwell time is ${dwell} days` };
 
-  return {
-    level: out.level,
-    warmStreak: out.warmStreak,
-    changed: true,
-    held: false,
-    pending: null,
-    lastChange: todayIso,
-    reason: out.reason,
-  };
+  return { level: out.level, changed: true, held: false, pending: null, lastChange: todayIso, reason: out.reason };
 }
 
 export function daysBetween(fromIso, toIso) {

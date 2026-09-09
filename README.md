@@ -4,10 +4,10 @@ Watches the charge-level setting of night storage heaters (Stiebel Eltron ETS)
 and sends a notification **only when the knob actually needs turning** — a few
 times a season, not every day.
 
-Once a day in the evening a GitHub Actions workflow fetches the Open-Meteo forecast
-for Kraków, computes `min48` and `avg72`, runs them through threshold logic
-with hysteresis, and — if the recommended level changed — notifies you via
-ntfy.sh. State lives in [data/state.json](data/state.json); a PWA on GitHub
+Once a day in the evening a GitHub Actions workflow fetches the Open-Meteo
+forecast for Kraków, computes the 72 h average, the coldest 24 h mean within
+48 h, and the 48 h minimum, runs them through threshold logic with hysteresis,
+and — if the recommended level changed — notifies you via ntfy.sh. State lives in [data/state.json](data/state.json); a PWA on GitHub
 Pages shows the current status.
 
 ## Setup in fifteen minutes
@@ -49,15 +49,18 @@ numbers. Two ways to change them:
 - **From GitHub**: edit `config.json` in the browser and commit.
 
 How to read them: every transition has **separate entry and exit thresholds**
-(hysteresis), e.g. level II engages when the 72 h average drops below +1 °C
-but disengages only above +7 °C. On top of that, lowering the level must
-"hold" for `confirmDaysDown` consecutive evenings — a single warm day changes
-nothing. Raising is immediate, because a cold flat hurts more than a few
-extra złoty.
+(hysteresis). Level II engages when the 72 h average drops below +3 °C and
+disengages only above +9 °C. Level III is driven by the **coldest 24 h mean**
+within the next 48 h (below −9 °C in, above −2 °C out) — a storage heater
+responds to daily energy, not to one cold hour — plus an emergency trigger at
+a 48 h minimum below −16 °C. On top of that, lowering must "hold" for
+`confirmDaysDown` consecutive evenings and is postponed while days 4–7 of the
+forecast dip back under the entry threshold. Raising is immediate, because a
+cold flat hurts more than a few extra złoty.
 
-If in practice the heaters can't keep up (cold mornings) — lower `toII_avg72`
-/ `toIII_min48` by 1–2 °C. If it overheats and wastes electricity — raise the
-exit thresholds (`IItoI_avg72`, `IIItoII_min48`). After any change, run the
+If in practice the heaters can't keep up (cold mornings) — raise `toII_avg72`
+/ `toIII_mean24` by 1–2 °C. If it overheats and wastes electricity — lower the
+exit thresholds (`IItoI_avg72`, `IIItoII_mean24`). After any change, run the
 backtest (below) and check how many changes per season come out.
 
 ## Token for saving from the PWA
@@ -90,12 +93,19 @@ node scripts/backtest.js --sweep     # compare threshold variants
 ```
 
 ```bash
-node scripts/backtest.js --set toII_avg72=2 --set IItoI_avg72=6   # custom thresholds
+node scripts/backtest.js --set toII_avg72=2 --set IItoI_avg72=8   # custom thresholds
+```
+
+```bash
+node scripts/backtest.js --real   # decide from archived real forecasts, not hindsight
 ```
 
 Target: 3–6 changes per season. The thresholds in `config.json` yield
-**5 / 5 / 7** (2023/24, 2024/25, 2025/26 — the seven covers two separate cold
-snaps in January and February 2026, each worth a notification).
+**5 / 3 / 5** on perfect hindsight and **7 / 3 / 5** on archived real
+forecasts (2023/24, 2024/25, 2025/26). The seven is an honest outlier: winter
+2023/24 had two separate deep-frost waves in December and January, each worth
+its pair of notifications, and every change that season was at least 11 days
+apart.
 
 ## Tests
 
@@ -120,4 +130,6 @@ make the level flap.
   a duplicate run on the same day. If the run itself fails, you get an ntfy
   alert.
 - Outside the season (May 1 – September 14) nothing happens and nothing is
-  sent. On September 15 and April 30 you get the boundary notifications.
+  sent. On September 15 you get a "watching again, leave the heaters at 0"
+  notification — the first real 0 → I change comes from the forecast, usually
+  late September or early October. On April 30 you get "turn everything to 0".

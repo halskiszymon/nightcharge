@@ -17,8 +17,10 @@ const force = process.env.FORCE || '';
 
 function loadState() {
   if (!existsSync(STATE_FILE))
-    return { level: '0', warmStreak: 0, lastChange: null, pending: null, history: [], seasonStartNotified: null, seasonEndNotified: null };
-  return JSON.parse(readFileSync(STATE_FILE));
+    return { level: '0', lastChange: null, pending: null, history: [], seasonStartNotified: null, seasonEndNotified: null };
+  const state = JSON.parse(readFileSync(STATE_FILE));
+  delete state.warmStreak; // removed field from older versions
+  return state;
 }
 
 function saveState(state) {
@@ -44,7 +46,7 @@ async function fetchForecast() {
   const { latitude, longitude, timezone } = config.location;
   const url =
     `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}` +
-    `&hourly=temperature_2m&forecast_days=7&timezone=${encodeURIComponent(timezone)}`;
+    `&hourly=temperature_2m&forecast_days=8&timezone=${encodeURIComponent(timezone)}`;
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
       const res = await fetch(url, { signal: AbortSignal.timeout(30_000) });
@@ -75,8 +77,7 @@ function seasonBoundary(state, now) {
       kind: 'start',
       mark: () => (state.seasonStartNotified = year),
       title: 'Heating season starts',
-      message: `Set the heaters to level I before ${config.check.knobDeadline}. The kitchen can stay at 0.`,
-      newLevel: 'I',
+      message: 'NightCharge is watching the forecast again. Leave the heaters at 0 — you will get a notification when it is time for level I.',
     };
   if (within(season.end, 5) && state.seasonEndNotified !== year)
     return {
@@ -97,7 +98,7 @@ const main = async () => {
   if (boundary) {
     await notify({ topic, title: boundary.title, message: boundary.message, priority: 'high', tags: ['calendar'] });
     boundary.mark();
-    if (state.level !== boundary.newLevel) {
+    if (boundary.newLevel && state.level !== boundary.newLevel) {
       state.history.push({ date: now.iso, from: state.level, to: boundary.newLevel, reason: boundary.title });
       state.level = boundary.newLevel;
       state.lastChange = now.iso;
@@ -133,7 +134,6 @@ const main = async () => {
 
   const before = state.level;
   const out = step(state, m, config.thresholds, now.iso);
-  state.warmStreak = out.warmStreak;
   state.pending = out.pending ?? null;
 
   const changed = out.changed || force === 'change';

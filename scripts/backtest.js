@@ -1,5 +1,8 @@
 // Backtests the thresholds against real weather from the Open-Meteo Archive API.
 //   node scripts/backtest.js                       — thresholds from config.json
+//   node scripts/backtest.js --real                — decisions from archived real
+//                                                    forecasts (Previous Runs API)
+//                                                    instead of perfect hindsight
 //   node scripts/backtest.js --preset presets/x.json
 //   node scripts/backtest.js --set toII_avg72=2 --set IItoI_avg72=6
 //   node scripts/backtest.js --sweep               — grid of variants, summary table
@@ -50,8 +53,23 @@ async function archive(key, from, to) {
   return json.hourly;
 }
 
-function runSeason(hourly, from, to, th, season) {
-  const state = { level: '0', warmStreak: 0, lastChange: null, pending: null };
+// Replaces observed temps with what the forecast said N days earlier, so the
+// backtest sees the same (imperfect) data the evening decision would have seen.
+function pseudoForecast(obs, prev, start) {
+  const day0 = obs.time[start].slice(0, 10);
+  const temps = [];
+  for (let o = 0; o < 168 && start + o < obs.time.length; o++) {
+    const i = start + o;
+    const lead = Math.round((new Date(obs.time[i].slice(0, 10)) - new Date(day0)) / 86400000);
+    let v = lead >= 1 && lead <= 4 ? prev[`temperature_2m_previous_day${lead}`][i] : null;
+    if (v === null || v === undefined) v = obs.temperature_2m[i]; // lead 0 + archive gaps
+    temps.push(v);
+  }
+  return { time: obs.time.slice(start, start + temps.length), temperature_2m: temps };
+}
+
+function runSeason(hourly, from, to, th, season, prev = null) {
+  const state = { level: '0', lastChange: null, pending: null };
   let soc = 0;
   const changes = [];
   const days = [];
@@ -61,17 +79,20 @@ function runSeason(hourly, from, to, th, season) {
     const day = d.toISOString().slice(0, 10);
     if (!inSeason(d, season)) continue;
 
-    const m = metrics(hourly, `${day}T20:00`, th);
+    const startAt = `${day}T20:00`;
+    const source = prev ? pseudoForecast(hourly, prev, hourly.time.findIndex((t) => t >= startAt)) : hourly;
+    const m = metrics(source, startAt, th);
     if (!m.complete) { skipped++; continue; }
+    // energy accounting below needs indices into the observed series
+    const obsStart = hourly.time.findIndex((t) => t >= startAt);
 
     const before = state.level;
     const out = step(state, m, th, day);
     state.level = out.level;
-    state.warmStreak = out.warmStreak;
     state.pending = out.pending;
     if (out.changed) state.lastChange = day;
 
-    const mean24 = mean(hourly.temperature_2m.slice(m.start, m.start + 24));
+    const mean24 = mean(hourly.temperature_2m.slice(obsStart, obsStart + 24));
     const e = coreDay(soc, out.level, mean24, config.heaters);
     soc = e.soc;
     days.push({ day, level: out.level, min48: m.min48, avg72: m.avg72, mean24, ...e });
@@ -86,11 +107,38 @@ function levelDays(days) {
   return tally;
 }
 
-async function evaluate(th, { detail = false } = {}) {
+const PREV_VARS = [1, 2, 3, 4].map((d) => `temperature_2m_previous_day${d}`);
+
+async function prevRuns(key, from, to) {
+  const cacheKey = `prev-${key}`;
+  if (memo.has(cacheKey)) return memo.get(cacheKey);
+  const file = new URL(`${cacheKey}.json`, ARCHIVE_DIR);
+  if (existsSync(file)) {
+    const h = JSON.parse(readFileSync(file)).hourly;
+    memo.set(cacheKey, h);
+    return h;
+  }
+  const { latitude, longitude, timezone } = config.location;
+  const url =
+    `https://previous-runs-api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}` +
+    `&hourly=${PREV_VARS.join(',')}&start_date=${from}&end_date=${to}&timezone=${encodeURIComponent(timezone)}`;
+  process.stderr.write(`fetching archived forecasts for ${key}...\n`);
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Open-Meteo Previous Runs ${res.status} for ${key}`);
+  const json = await res.json();
+  mkdirSync(new URL('.', file), { recursive: true });
+  writeFileSync(file, JSON.stringify(json));
+  memo.set(cacheKey, json.hourly);
+  return json.hourly;
+}
+
+async function evaluate(th, { detail = false, real = false } = {}) {
   const rows = [];
   for (const [key, from, to] of SEASONS) {
     const hourly = await archive(key, from, to);
-    const r = runSeason(hourly, from, to, th, config.season);
+    // must cover the archive file's exact range so indices line up
+    const prev = real ? await prevRuns(key, hourly.time[0].slice(0, 10), hourly.time.at(-1).slice(0, 10)) : null;
+    const r = runSeason(hourly, from, to, th, config.season, prev);
     rows.push({ key, ...r });
     if (detail) {
       console.log(`\n── season ${key} — ${r.changes.length} changes`);
@@ -116,16 +164,8 @@ function counts(rows) {
   return rows.map((r) => r.changes.length);
 }
 
-const ORIGINAL = {
-  toIII_min48: -8, IIItoII_min48: -5, toII_avg72: 3, IItoI_avg72: 5,
-  ItoZero_avg72: 14, ItoZero_days: 3, zeroToI_avg72: 12,
-  confirmDaysUp: 1, confirmDaysDown: 1, minDaysBetweenChanges: 0,
-  avgWindowHours: 72, minWindowHours: 48,
-};
-
 const PRESETS = {
-  'original (from the brief)': ORIGINAL,
-  'config.json (recommended)': config.thresholds,
+  'config.json': config.thresholds,
 };
 
 export { evaluate, archive, SEASONS, config, counts };
@@ -134,7 +174,7 @@ const main = async () => {
   if (flag('sweep')) {
     console.log('thresholds                        23/24  24/25  25/26  total');
     for (const [name, th] of Object.entries(PRESETS)) {
-      const c = counts(await evaluate(th));
+      const c = counts(await evaluate(th, { real: flag('real') }));
       const flagChar = c.every((n) => n >= 3 && n <= 6) ? ' ✓' : '';
       console.log(
         `${name.padEnd(32)} ${c.map((n) => String(n).padStart(5)).join('  ')}  ${String(c.reduce((a, b) => a + b, 0)).padStart(5)}${flagChar}`
@@ -153,7 +193,7 @@ const main = async () => {
     }
 
   console.log('thresholds:', JSON.stringify(th));
-  const rows = await evaluate(th, { detail: flag('detail') || args.length === 0 });
+  const rows = await evaluate(th, { detail: flag('detail') || args.filter((x) => x !== '--real').length === 0, real: flag('real') });
   const c = counts(rows);
   console.log(`\nchanges per season: ${c.join(', ')}  (target: 3–6)`);
 };
