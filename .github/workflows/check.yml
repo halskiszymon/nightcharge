@@ -2,11 +2,12 @@ name: Check forecast
 
 on:
   schedule:
-    # 19:30 Europe/Warsaw = 17:30 UTC (summer) / 18:30 UTC (winter).
-    # Actions cron can run 10–15 minutes late, so we fire at both hours
-    # and scripts/guard.js lets only the right one through.
-    - cron: '30 17 * * *'
-    - cron: '30 18 * * *'
+    # Target: evening Europe/Warsaw. Actions cron can be hours late, so we
+    # fire early (16:00 UTC = 18:00 CEST, 17:00 UTC = 18:00 CET) and
+    # scripts/guard.js accepts any run at or after the configured local hour;
+    # check.js skips a duplicate run on the same day.
+    - cron: '0 16 * * *'
+    - cron: '0 17 * * *'
   workflow_dispatch:
     inputs:
       force:
@@ -43,6 +44,15 @@ jobs:
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
           FORCE: ${{ inputs.force }}
         run: node scripts/check.js
+
+      - name: Alert on failure
+        if: failure()
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: |
+          curl -sS -H "Title: NightCharge workflow failed" -H "Priority: high" -H "Tags: rotating_light" \
+            -d "Check the run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            "https://ntfy.sh/${NTFY_TOPIC}"
 
       - name: Commit state back to the repo
         if: github.event_name != 'schedule' || steps.guard.outputs.run == 'true'

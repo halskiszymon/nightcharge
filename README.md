@@ -4,7 +4,7 @@ Watches the charge-level setting of night storage heaters (Stiebel Eltron ETS)
 and sends a notification **only when the knob actually needs turning** — a few
 times a season, not every day.
 
-Once a day at 19:30 a GitHub Actions workflow fetches the Open-Meteo forecast
+Once a day in the evening a GitHub Actions workflow fetches the Open-Meteo forecast
 for Kraków, computes `min48` and `avg72`, runs them through threshold logic
 with hysteresis, and — if the recommended level changed — notifies you via
 ntfy.sh. State lives in [data/state.json](data/state.json); a PWA on GitHub
@@ -114,8 +114,10 @@ make the level flap.
   → notification → state commit. If Open-Meteo doesn't respond, the workflow
   fails visibly (red cross), state stays untouched, and the next day it tries
   again normally.
-- [scripts/guard.js](scripts/guard.js) — Actions cron runs in UTC, so the
-  workflow fires at 17:30 and 18:30 UTC and the guard lets through only the
-  run landing at 19:xx Warsaw time (handles DST).
+- [scripts/guard.js](scripts/guard.js) — Actions cron runs in UTC and can be
+  hours late, so the workflow fires at 16:00 and 17:00 UTC and the guard
+  accepts any run at or after 18:00 Warsaw time (handles DST); check.js skips
+  a duplicate run on the same day. If the run itself fails, you get an ntfy
+  alert.
 - Outside the season (May 1 – September 14) nothing happens and nothing is
   sent. On September 15 and April 30 you get the boundary notifications.

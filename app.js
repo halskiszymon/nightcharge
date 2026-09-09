@@ -10,6 +10,14 @@ async function json(path) {
   return res.json();
 }
 
+function inSeason(date, season) {
+  if (!season.enabled) return false;
+  const md = `${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  return season.start <= season.end
+    ? md >= season.start && md <= season.end
+    : md >= season.start || md <= season.end;
+}
+
 function daysAgo(iso) {
   if (!iso) return null;
   return Math.round((Date.now() - new Date(`${iso}T12:00:00`)) / 86400000);
@@ -77,8 +85,8 @@ async function main() {
     ? `since ${state.lastChange} (${daysAgo(state.lastChange)} days ago)`
     : 'no changes yet';
 
-  const checkedToday = state.lastCheck?.date === new Date().toISOString().slice(0, 10);
-  const stale = state.lastCheck && daysAgo(state.lastCheck.date) > 2;
+  // out of season the daily check exits early and lastCheck ages by design
+  const stale = inSeason(new Date(), config.season) && state.lastCheck && daysAgo(state.lastCheck.date) > 2;
   if (stale) {
     $('stale').style.display = 'block';
     $('stale').textContent = `⚠ Last check: ${state.lastCheck.date}. The workflow may have failed.`;

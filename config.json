@@ -1,6 +1,6 @@
 {
   "location": {
-    "name": "Kraków",
+    "name": "Krak\u00f3w",
     "latitude": 50.0614,
     "longitude": 19.9366,
     "timezone": "Europe/Warsaw"
@@ -11,7 +11,7 @@
     "end": "04-30"
   },
   "check": {
-    "localHour": 19,
+    "localHour": 18,
     "localMinute": 30,
     "knobDeadline": "22:00"
   },
@@ -41,6 +41,6 @@
   },
   "cost": {
     "pricePerKwhNight": 0.64,
-    "currency": "zł"
+    "currency": "z\u0142"
   }
 }
