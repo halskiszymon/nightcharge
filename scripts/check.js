@@ -2,6 +2,7 @@
 // Run from GitHub Actions. Exits non-zero on failure — the workflow must see it.
 //   FORCE=notify  — send a test notification regardless of the decision
 //   FORCE=change  — treat today's decision as a change (tests the full path)
+//   FORCE=fail    — throw immediately (tests the workflow's failure alert)
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { step, metrics, inSeason, fmt, daysBetween } from '../src/thresholds.js';
@@ -91,6 +92,7 @@ function seasonBoundary(state, now) {
 }
 
 const main = async () => {
+  if (force === 'fail') throw new Error('Forced failure to test the alert path.');
   const state = loadState();
   const now = localNow();
 

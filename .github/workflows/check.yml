@@ -11,9 +11,9 @@ on:
   workflow_dispatch:
     inputs:
       force:
-        description: 'Test mode: notify = send a test notification, change = simulate a level change'
+        description: 'Test mode: notify = send a test notification, change = simulate a level change, fail = test the failure alert'
         type: choice
-        options: ['', 'notify', 'change']
+        options: ['', 'notify', 'change', 'fail']
         default: ''
 
 permissions:
@@ -45,15 +45,6 @@ jobs:
           FORCE: ${{ inputs.force }}
         run: node scripts/check.js
 
-      - name: Alert on failure
-        if: failure()
-        env:
-          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
-        run: |
-          curl -sS -H "Title: NightCharge workflow failed" -H "Priority: high" -H "Tags: rotating_light" \
-            -d "Check the run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
-            "https://ntfy.sh/${NTFY_TOPIC}"
-
       - name: Commit state back to the repo
         if: github.event_name != 'schedule' || steps.guard.outputs.run == 'true'
         run: |
@@ -64,3 +55,12 @@ jobs:
           git commit -m "state: $(date -u +%F)"
           git pull --rebase origin "${GITHUB_REF_NAME}"
           git push
+
+      - name: Alert on failure
+        if: failure()
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: |
+          curl -sS -H "Title: NightCharge workflow failed" -H "Priority: high" -H "Tags: rotating_light" \
+            -d "Check the run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            "https://ntfy.sh/${NTFY_TOPIC}"
