@@ -6,9 +6,9 @@
   "seasonStartNotified": "2026",
   "seasonEndNotified": null,
   "lastCheck": {
-    "date": "2026-10-03",
-    "min48": 9,
-    "avg72": 15.127777777777778,
+    "date": "2026-10-04",
+    "min48": 9.3,
+    "avg72": 15.081944444444442,
     "reason": "warm, 3-day average 15.1 °C"
   },
   "keepalive": "2026-09-09"
