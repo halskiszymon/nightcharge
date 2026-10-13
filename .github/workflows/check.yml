@@ -2,12 +2,12 @@ name: Check forecast
 
 on:
   schedule:
-    # Target: evening Europe/Warsaw. Actions cron can be hours late, so we
-    # fire early (16:00 UTC = 18:00 CEST, 17:00 UTC = 18:00 CET) and
-    # scripts/guard.js accepts any run at or after the configured local hour;
-    # check.js skips a duplicate run on the same day.
-    - cron: '0 16 * * *'
-    - cron: '0 17 * * *'
+    # Target: any evening hour Europe/Warsaw, early enough to beat the 22:00
+    # charging window. Actions cron has been observed 4-7 h late (worst at
+    # :00 slots), so we fire six times at an off-peak minute; scripts/guard.js
+    # accepts the first run at or after the configured local hour and
+    # check.js skips the rest of the day. Out of season every run exits fast.
+    - cron: '23 14,15,16,17,18,19 * * *'
   workflow_dispatch:
     inputs:
       force:

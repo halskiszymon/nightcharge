@@ -125,10 +125,10 @@ make the level flap.
   fails visibly (red cross), state stays untouched, and the next day it tries
   again normally.
 - [scripts/guard.js](scripts/guard.js) — Actions cron runs in UTC and can be
-  hours late, so the workflow fires at 16:00 and 17:00 UTC and the guard
-  accepts any run at or after 18:00 Warsaw time (handles DST); check.js skips
-  a duplicate run on the same day. If the run itself fails, you get an ntfy
-  alert.
+  hours late (4–7 h has happened), so the workflow fires six times between
+  14:23 and 19:23 UTC and the guard accepts the first run at or after 17:00
+  Warsaw time (handles DST); check.js skips the rest of the day. If the run
+  itself fails, you get an ntfy alert.
 - Outside the season (May 1 – September 14) nothing happens and nothing is
   sent. On September 15 you get a "watching again, leave the heaters at 0"
   notification — the first real 0 → I change comes from the forecast, usually
