@@ -1,6 +1,6 @@
 {
-  "level": "I",
-  "lastChange": "2026-10-11",
+  "level": "II",
+  "lastChange": "2026-11-05",
   "pending": null,
   "history": [
     {
@@ -8,15 +8,21 @@
       "from": "0",
       "to": "I",
       "reason": "3-day average dropping to 9.2 °C"
+    },
+    {
+      "date": "2026-11-05",
+      "from": "I",
+      "to": "II",
+      "reason": "3-day average dropping to 2.1 °C"
     }
   ],
   "seasonStartNotified": "2026",
   "seasonEndNotified": null,
   "lastCheck": {
-    "date": "2026-11-04",
-    "min48": 0.9,
-    "avg72": 3.351388888888888,
-    "reason": "3-day average 3.4 °C"
+    "date": "2026-11-05",
+    "min48": -0.3,
+    "avg72": 2.1013888888888883,
+    "reason": "3-day average dropping to 2.1 °C"
   },
   "keepalive": "2026-09-09"
 }
